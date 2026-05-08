@@ -206,7 +206,7 @@
 
     input.value = "";
 
-    const res = await fetch("http://localhost:5000/chat", {
+    const res = await fetch("https://portfolio-chatbot-cqyd.onrender.com/chat", {
 
       method: "POST",
 
