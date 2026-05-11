@@ -19,7 +19,7 @@ const client = new OpenAI({
 });
 
 const VECTOR_STORE_ID =
-  "vs_69f338c4949481919b7cd95d2b936f98";
+  process.env.VECTOR_STORE_ID;
 
 const WEBSITE_URLS = [
   "https://bondvue.com/",
@@ -85,11 +85,11 @@ const trainWebsites = async () => {
     );
 
     await client.vectorStores.files.create(
-  "vs_69f338c4949481919b7cd95d2b936f98",
-  {
-    file_id: file.id
-  }
-);
+      VECTOR_STORE_ID,
+      {
+        file_id: file.id
+      }
+    );
 
     console.log(
       "Website training completed."
