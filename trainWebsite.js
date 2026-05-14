@@ -1,8 +1,7 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
-import axios from "axios";
-import * as cheerio from "cheerio";
 import fs from "fs";
+import puppeteer from "puppeteer";
 
 dotenv.config();
 
@@ -17,26 +16,94 @@ const WEBSITE_URLS = [
   "https://bondvue.com/",
   "https://portfolio-eo7x.onrender.com/",
   "https://www.rbi.org.in/scripts/bs_viewcontent.aspx?Id=1956"
-
 ];
 
 const scrapeWebsite = async (url) => {
 
-  const response =
-    await axios.get(url);
+  const browser =
+    await puppeteer.launch({
+      headless: true
+    });
 
-  const $ =
-    cheerio.load(response.data);
+  const page =
+    await browser.newPage();
 
-  $("script").remove();
-  $("style").remove();
+  await page.goto(url, {
+    waitUntil: "networkidle2",
+    timeout: 0
+  });
+
+  // TEXT
 
   const text =
-    $("body").text();
+    await page.evaluate(() => {
+      return document.body.innerText;
+    });
 
-  return text
-    .replace(/\s+/g, " ")
-    .trim();
+  // IMAGE URLS
+
+  const images =
+    await page.evaluate(() => {
+
+      return Array.from(
+        document.images
+      ).map(img => img.src);
+
+    });
+
+  // PDF LINKS
+
+  const pdfs =
+    await page.evaluate(() => {
+
+      return Array.from(
+        document.querySelectorAll("a")
+      )
+      .map(a => a.href)
+      .filter(link =>
+        link.endsWith(".pdf")
+      );
+
+    });
+
+  // TABLE DATA
+
+  const tables =
+    await page.evaluate(() => {
+
+      return Array.from(
+        document.querySelectorAll("table")
+      )
+      .map(table => table.innerText);
+
+    });
+
+  await browser.close();
+
+  return `
+    
+WEBSITE:
+${url}
+
+================ TEXT ================
+
+${text}
+
+================ IMAGES ================
+
+${images.join("\n")}
+
+================ PDF LINKS ================
+
+${pdfs.join("\n")}
+
+================ TABLE DATA ================
+
+${tables.join("\n\n")}
+
+========================================
+
+`;
 
 };
 
@@ -44,23 +111,32 @@ const trainWebsites = async () => {
 
   try {
 
-    console.log("Training websites...");
+    console.log(
+      "Training websites..."
+    );
 
     let allText = "";
 
     for (const url of WEBSITE_URLS) {
 
-      console.log(`Scraping: ${url}`);
+      console.log(
+        `Scraping: ${url}`
+      );
 
-      const text =
+      const websiteData =
         await scrapeWebsite(url);
 
-      allText += `\n\n${text}`;
+      allText +=
+        websiteData;
 
     }
 
+    console.log(
+      "Creating file..."
+    );
+
     fs.writeFileSync(
-      "website-data.txt",
+      "./website-data.txt",
       allText
     );
 
@@ -91,9 +167,9 @@ const trainWebsites = async () => {
       "Website training completed."
     );
 
-    // DELETE LOCAL FILE
-
-    fs.unlinkSync("website-data.txt");
+    fs.unlinkSync(
+      "website-data.txt"
+    );
 
   }
 
