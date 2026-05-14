@@ -238,16 +238,50 @@
 
     }
 
-    // TEXT
+    /    // TEXT
     if (data.reply) {
 
-      chatBox.innerHTML += `
-        <div class="rio-message rio-bot">
-          <div class="rio-bubble">
-            ${data.reply}
-          </div>
+      const botMessage =
+        document.createElement("div");
+
+      botMessage.className =
+        "rio-message rio-bot";
+
+      botMessage.innerHTML = `
+        <div class="rio-bubble">
+          <span class="typing"></span>
         </div>
       `;
+
+      chatBox.appendChild(botMessage);
+
+      const typingElement =
+        botMessage.querySelector(".typing");
+
+      let index = 0;
+
+      const typingInterval =
+        setInterval(() => {
+
+          typingElement.innerHTML +=
+            data.reply.charAt(index);
+
+          index++;
+
+          chatBox.scrollTop =
+            chatBox.scrollHeight;
+
+          if (
+            index >= data.reply.length
+          ) {
+
+            clearInterval(
+              typingInterval
+            );
+
+          }
+
+        }, 20);
 
     }
 
@@ -260,4 +294,28 @@
     .getElementById("rioSend")
     .onclick = sendMessage;
 
+  // SEND BUTTON + ENTER KEY
+
+const rioInput =
+  document.getElementById("rioInput");
+
+const rioSend =
+  document.getElementById("rioSend");
+
+rioSend.onclick = sendMessage;
+
+rioInput.addEventListener(
+  "keydown",
+  async function (e) {
+
+    if (e.key === "Enter") {
+
+      e.preventDefault();
+
+      await sendMessage();
+
+    }
+
+  }
+);
 })();

@@ -2,9 +2,6 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import OpenAI from "openai";
-import axios from "axios";
-import * as cheerio from "cheerio";
-import fs from "fs";
 
 dotenv.config();
 
@@ -18,176 +15,150 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const VECTOR_STORE_ID =
-  process.env.VECTOR_STORE_ID;
-
-const WEBSITE_URLS = [
-  "https://bondvue.com/",
-  "https://portfolio-eo7x.onrender.com/"
-];
-
-const scrapeWebsite = async (url) => {
-
-  const response =
-    await axios.get(url);
-
-  const $ =
-    cheerio.load(response.data);
-
-  $("script").remove();
-  $("style").remove();
-
-  const text =
-    $("body").text();
-
-  return text
-    .replace(/\s+/g, " ")
-    .trim();
-};
-
-const trainWebsites = async () => {
-
-  try {
-
-    console.log("Training websites...");
-
-    let allText = "";
-
-    for (const url of WEBSITE_URLS) {
-
-      console.log(`Scraping: ${url}`);
-
-      const text =
-        await scrapeWebsite(url);
-
-      allText += `\n\n${text}`;
-    }
-
-    fs.writeFileSync(
-      "website-data.txt",
-      allText
-    );
-
-    console.log(
-      "Uploading website data..."
-    );
-
-    const file =
-      await client.files.create({
-        file: fs.createReadStream(
-          "website-data.txt"
-        ),
-        purpose: "assistants"
-      });
-
-    console.log(
-      "Adding website to vector store..."
-    );
-
-    await client.vectorStores.files.create(
-      VECTOR_STORE_ID,
-      {
-        file_id: file.id
-      }
-    );
-
-    console.log(
-      "Website training completed."
-    );
-
-  }
-
-  catch(error){
-
-    console.log(
-      "Website training error:"
-    );
-
-    console.log(error);
-
-  }
-
-};
+let threadId = null;
 
 app.post("/chat", async (req, res) => {
 
   try {
 
-    const message =
-      req.body.message;
+    const message = req.body.message;
+
+    // CREATE THREAD ONCE
+
+    if (!threadId) {
+
+      const thread =
+        await client.beta.threads.create();
+
+      threadId = thread.id;
+    }
 
     // IMAGE GENERATION
 
-    if (
-      message.toLowerCase().includes("image") ||
-      message.toLowerCase().includes("generate")
-    ) {
+   const imageKeywords = [
+  "image",
+  "photo",
+  "picture",
+  "draw",
+  "generate",
+  "create",
+  "illustration"
+];
 
-      const image =
-        await client.images.generate({
+const isImageRequest =
+  imageKeywords.some(word =>
+    message.toLowerCase().includes(word)
+  );
 
-          model: "gpt-image-1",
+if (isImageRequest) {
 
-          prompt: message,
+  const image =
+    await client.images.generate({
 
-          size: "1024x1024"
+      model: "gpt-image-1",
 
-        });
+      prompt: message,
 
-      return res.json({
-        image: image.data[0].b64_json
-      });
+      size: "1024x1024"
+    });
 
-    }
+  return res.json({
+    image: image.data[0].b64_json
+  });
+}
 
-    // ASSISTANT CHAT
-
-    const thread =
-      await client.beta.threads.create();
+    // USER MESSAGE
 
     await client.beta.threads.messages.create(
-      thread.id,
+      threadId,
       {
         role: "user",
         content: message
       }
     );
 
-    await client.beta.threads.runs.createAndPoll(
-      thread.id,
-      {
-        assistant_id:
-          process.env.ASSISTANT_ID
-      }
-    );
+    // RUN ASSISTANT
+
+    const run =
+      await client.beta.threads.runs.createAndPoll(
+        threadId,
+        {
+          assistant_id:
+            process.env.ASSISTANT_ID
+        }
+      );
+
+    // GET ALL MESSAGES
 
     const messages =
       await client.beta.threads.messages.list(
-        thread.id
+        threadId
       );
 
-    let reply =
-      messages.data[0]
-      .content[0]
-      .text.value;
+    // LATEST MESSAGE
+
+    const latestMessage =
+      messages.data[0];
+
+    let reply = "";
+
+    // HANDLE CONTENT BLOCKS
+
+    let imageFileId = null;
+
+for (const item of latestMessage.content) {
+
+  if (item.type === "text") {
+
+    reply += item.text.value;
+  }
+
+  if (item.type === "image_file") {
+
+    imageFileId =
+      item.image_file.file_id;
+  }
+}
+
+if (imageFileId) {
+
+  const imageFile =
+    await client.files.content(
+      imageFileId
+    );
+
+  const chunks = [];
+
+  for await (const chunk of imageFile.body) {
+    chunks.push(chunk);
+  }
+
+  const buffer =
+    Buffer.concat(chunks);
+
+  return res.json({
+    reply,
+    image:
+      buffer.toString("base64")
+  });
+}
 
     reply =
       reply.replace(/【.*?】/g, "");
 
-    res.json({
+    return res.json({
       reply
     });
 
   }
 
-  catch(error){
+  catch (error) {
 
     console.log(error);
 
-    res.json({
+    return res.status(500).json({
       error: "Something went wrong"
     });
-
   }
 
 });
@@ -195,10 +166,7 @@ app.post("/chat", async (req, res) => {
 const PORT =
   process.env.PORT || 5000;
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
 
   console.log("Server running");
-
-  await trainWebsites();
-
 });
